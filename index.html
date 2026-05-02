@@ -6,7 +6,7 @@
   <title>UPMB Portal - Pengumpulan Soal</title>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    /* ========== GAYA (SAMA PERSIS SEPERTI SEBELUMNYA) ========== */
+    /* ========== GAYA LENGKAP (TIDAK DIUBAH) ========== */
     :root {
       --primary: #4f46e5;
       --primary-glow: rgba(79, 70, 229, 0.4);
@@ -292,7 +292,6 @@
     const isDosenFilled = dosenEl.value && dosenEl.value.trim() !== '';
     isStep1Valid = isMKFilled && isKelasFilled && isDosenFilled;
     
-    // Jika semua field sudah terisi dan ada notifikasi "Harap isi semua informasi dasar", sembunyikan
     if (isStep1Valid && feedbackMsg.style.display === 'block' && feedbackMsg.innerHTML.includes('Harap isi semua informasi dasar')) {
       feedbackMsg.style.display = 'none';
       feedbackMsg.innerHTML = '';
@@ -369,7 +368,7 @@
     dupTimer = setTimeout(checkDuplicate, 600);
   }
 
-  // ========== VALIDASI SEMESTER AKTIF (TANPA NOTIF PERIODE DI FORM) ==========
+  // ========== VALIDASI SEMESTER AKTIF & PERIODE UTS/UAS ==========
   function checkAllValidations() {
     const y = parseInt(yearEl.value, 10);
     const s = semEl.value;
@@ -386,7 +385,6 @@
     }
     isSemActive = (localTime >= startDate && localTime <= endDate);
 
-    // Validasi semester aktif (tampilkan di semNotif)
     if (!isSemActive) {
       semNotif.innerHTML = `<i>🚫</i> Semester ${s} ${y}/${y+1} is currently inactive or out of range.`;
       semNotif.classList.add('active');
@@ -399,12 +397,10 @@
       isSemesterValid = true;
     }
 
-    // Hitung minggu ke- untuk validasi internal (tanpa menampilkan notifikasi di form)
     const diffDays = Math.floor((localTime - startDate) / (1000 * 60 * 60 * 24));
     const meeting = Math.floor(diffDays / 7) + 1;
     if (meeting < 1) meeting = 1;
 
-    // Set default tipe ujian jika belum dipilih
     if (!tipeEl.value) {
       tipeEl.value = (meeting <= 9) ? 'UTS' : 'UAS';
     }
@@ -434,10 +430,8 @@
     validationStatus = { isValid: ujianValid && isSemesterValid, message: ujianValid ? '' : ujianMessage };
   }
 
-  // Event listener untuk validasi semester & periode (internal)
   [yearEl, semEl, tipeEl].forEach(el => el.addEventListener('change', function() {
     checkAllValidations();
-    // Hapus notifikasi error sebelumnya jika sudah benar
     if (validationStatus.isValid && feedbackMsg.style.display === 'block' && 
         (feedbackMsg.innerHTML.includes('Periode') || feedbackMsg.innerHTML.includes('Semester'))) {
       feedbackMsg.style.display = 'none';
@@ -480,7 +474,6 @@
         showNotify('Harap isi semua informasi dasar.', 'error');
         return false;
       }
-      // Sembunyikan notifikasi jika field sudah terisi
       if (feedbackMsg.innerHTML.includes('Harap isi semua informasi dasar')) {
         feedbackMsg.style.display = 'none';
       }
@@ -591,22 +584,33 @@
   // ========== FILE UPLOAD ==========
   const dropzone = document.getElementById('dropzone');
   dropzone.addEventListener('click', () => fileInput.click());
+  
   fileInput.addEventListener('change', () => {
     const file = fileInput.files[0];
     if (!file) return;
+    
+    // Sembunyikan notifikasi "Harap pilih file terlebih dahulu" jika sedang tampil
+    if (feedbackMsg.style.display === 'block' && feedbackMsg.innerHTML.includes('Harap pilih file terlebih dahulu')) {
+      feedbackMsg.style.display = 'none';
+      feedbackMsg.innerHTML = '';
+    }
+    
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     if (!VALID_EXTENSIONS.includes(ext)) {
       showNotify('Format tidak didukung! Gunakan PDF, DOC, atau DOCX.', 'error');
-      fileInput.value = ''; return;
+      fileInput.value = ''; 
+      return;
     }
     if (file.size > MAX_FILE_SIZE) {
       showNotify('Ukuran file terlalu besar (Maks 25MB).', 'error');
-      fileInput.value = ''; return;
+      fileInput.value = ''; 
+      return;
     }
     document.getElementById('fileNameDisplay').textContent = file.name;
     document.getElementById('fileSizeDisplay').textContent = (file.size / (1024*1024)).toFixed(2) + ' MB';
     document.getElementById('fileStatus').classList.remove('hidden');
   });
+  
   dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.style.borderColor = 'var(--accent)'; });
   dropzone.addEventListener('dragleave', () => dropzone.style.borderColor = 'var(--border)');
   dropzone.addEventListener('drop', e => {
@@ -620,9 +624,11 @@
 
   submitBtn.addEventListener('click', async () => {
     const file = fileInput.files[0];
-    if (!file) { showNotify('Harap pilih file terlebih dahulu.', 'error'); return; }
+    if (!file) { 
+      showNotify('Harap pilih file terlebih dahulu.', 'error'); 
+      return; 
+    }
     
-    // Validasi lengkap sebelum upload
     checkAllValidations();
     const isUnique = await checkDuplicate();
     
@@ -660,8 +666,12 @@
           const key = jenjangEl.value + '|' + normStr(mkEl.value) + '|' + normStr(kelasEl.value);
           submittedCombos.add(key);
           showSuccess('Berkas soal ujian Anda telah berhasil diunggah ke portal akademik.');
-        } else { showNotify('❌ Upload Failed: ' + result.message, 'error'); }
-      } catch (err) { showNotify('❌ Kegagalan sistem atau koneksi terputus.', 'error'); }
+        } else { 
+          showNotify('❌ Upload Failed: ' + result.message, 'error'); 
+        }
+      } catch (err) { 
+        showNotify('❌ Kegagalan sistem atau koneksi terputus.', 'error'); 
+      }
       setLoadingState(false);
     };
     reader.readAsDataURL(file);
@@ -672,18 +682,12 @@
     feedbackMsg.style.display = 'block';
     feedbackMsg.className = `notif-box active ${type === 'success' ? 'notif-warn' : 'notif-error'}`;
     feedbackMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    
-    // Auto-hide setelah 5 detik untuk notifikasi info
-    if (type !== 'error') {
-      setTimeout(() => {
-        if (feedbackMsg.innerHTML === msg) {
-          feedbackMsg.style.display = 'none';
-        }
-      }, 5000);
-    }
   }
   
-  function setLoadingState(active) { submitBtn.disabled = active; submitBtn.innerHTML = active ? '⏳ Mengunggah...' : '<span>🚀</span> Unggah Soal Sekarang'; }
+  function setLoadingState(active) { 
+    submitBtn.disabled = active; 
+    submitBtn.innerHTML = active ? '⏳ Mengunggah...' : '<span>🚀</span> Unggah Soal Sekarang'; 
+  }
 
   // ========== STICKY NAVBAR SCROLL ==========
   const stickyNav = document.getElementById('stickyNav');
