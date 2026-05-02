@@ -463,19 +463,18 @@
       }
 
       window.resetToStart = function() {
+        // Cek dulu apakah success screen sedang tampil (innerHTML sudah diganti)
+        const card = document.querySelector('.form-card');
+        if (card.getAttribute('data-success') === 'true') {
+          location.reload();
+          return;
+        }
+
         document.getElementById('uploadForm').reset();
         document.getElementById('fileStatus').classList.add('hidden');
         semNotif.classList.remove('active');
         feedbackMsg.style.display = 'none';
         currentStep = 0;
-        
-        // Restore card content if it was replaced by success screen
-        const card = document.querySelector('.form-card');
-        if (card.getAttribute('data-success') === 'true') {
-           location.reload(); // Simplest way to restore the full interactive state
-           return;
-        }
-        
         updateStepper();
         checkAllValidations();
       };
