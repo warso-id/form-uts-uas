@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>UPMB Portal - Pengumpulan Soal</title>
+  <title>SIM Upload - Pengumpulan Soal</title>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -247,6 +247,30 @@
     }
     .form-header-text h2 { font-weight: 900; font-size: 2.5rem; color: #1e1b4b; letter-spacing: -0.04em; }
     .form-header-text p { color: var(--text-sub); font-size: 1.15rem; font-weight: 600; }
+
+    /* --- Jenjang Switch Animations --- */
+    @keyframes switchIn {
+      0%   { opacity: 0; transform: translateY(28px) scale(0.97); filter: blur(4px); }
+      60%  { opacity: 1; filter: blur(0); }
+      100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+    }
+    @keyframes switchOut {
+      0%   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+      100% { opacity: 0; transform: translateY(-20px) scale(0.97); filter: blur(4px); }
+    }
+    @keyframes colorFlash {
+      0%   { box-shadow: var(--shadow-premium), 0 0 0 0px var(--t-glow); }
+      40%  { box-shadow: var(--shadow-premium), 0 0 0 10px transparent; }
+      100% { box-shadow: var(--shadow-premium), 0 0 0 0px transparent; }
+    }
+    .form-card.switching-out {
+      animation: switchOut 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
+      pointer-events: none;
+    }
+    .form-card.switching-in {
+      animation: switchIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+                 colorFlash 0.6s ease forwards;
+    }
 
     /* --- Precision Stepper (Synchronized) --- */
     .stepper { display: flex; justify-content: space-between; position: relative; margin-bottom: 4rem; padding: 0 1rem; }
@@ -765,19 +789,34 @@
       // --- Jenjang Switching ---
       window.switchJenjang = function(jenjang, btn) {
         if (jenjangEl.value === jenjang) return;
-        
-        jenjangEl.value = jenjang;
-        document.body.setAttribute('data-jenjang', jenjang);
 
-        const formTitleText = `FORM UPLOAD ${jenjang === 'S1' ? 'UTS/UAS S1' : 'UTS/UAS S2'}`;
-        document.getElementById('form-title').textContent = formTitleText;
-        
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        
-        // Reset to first step
-        currentStep = 0;
-        updateStepper();
+        const card = document.querySelector('.form-card');
+
+        // Phase 1: slide out
+        card.classList.remove('switching-in');
+        card.classList.add('switching-out');
+
+        setTimeout(() => {
+          // Apply new theme & data
+          jenjangEl.value = jenjang;
+          document.body.setAttribute('data-jenjang', jenjang);
+
+          const formTitleText = `FORM UPLOAD ${jenjang === 'S1' ? 'UTS/UAS S1' : 'UTS/UAS S2'}`;
+          document.getElementById('form-title').textContent = formTitleText;
+
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+
+          currentStep = 0;
+          updateStepper();
+
+          // Phase 2: slide in
+          card.classList.remove('switching-out');
+          card.classList.add('switching-in');
+
+          // Clean up animation class after it ends
+          setTimeout(() => card.classList.remove('switching-in'), 600);
+        }, 280);
       };
 
       // --- Navigation View ---
