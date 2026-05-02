@@ -386,7 +386,7 @@
 
   <script>
     (function() {
-      const SCRIPT_URL = '<?= ScriptApp.getService().getUrl() ?>';
+      const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzJH9yiBC_2o_lDPt5r-ABS2YOnzA4zm2sWyLzVkIEJ7_UBB0cTToyrlV_riqV9cczv_Q/exec';
       const MAX_FILE_SIZE = 25 * 1024 * 1024;
       const VALID_EXTENSIONS = ['.pdf', '.doc', '.docx'];
 
@@ -613,7 +613,6 @@
         if (jenjangEl.value === jenjang) return;
         
         jenjangEl.value = jenjang;
-        // Keep the main titles static as per user request image
         const formTitleText = `FORM UPLOAD ${jenjang === 'S1' ? 'UTS/UAS S1' : 'UTS/UAS S2'}`;
         document.getElementById('form-title').textContent = formTitleText;
         
