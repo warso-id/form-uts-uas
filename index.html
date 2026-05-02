@@ -783,6 +783,7 @@
         currentStep = 0;
         updateStepper();
         checkAllValidations();
+        clearDupMsg();  // tambahan: bersihkan pesan duplikasi
       };
 
       function showSuccess(msg) {
@@ -803,26 +804,128 @@
         `;
       }
 
-      nextBtn.addEventListener('click', () => {
-        if (validateStep(currentStep)) {
-          currentStep++;
-          updateStepper();
+      // --- Duplicate handling (enhanced with specific messages)
+      const dupMsg   = document.getElementById('dupMsg');
+      const wrapMk   = document.getElementById('wrap-mk');
+      const wrapKelas= document.getElementById('wrap-kelas');
+
+      // In-session memory of submitted combos: key = "jenjang|mk|kelas"
+      const submittedCombos = new Set();
+
+      function normStr(s) {
+        return String(s).trim().toLowerCase().replace(/\s+/g, ' ');
+      }
+
+      function showDupMsg(type, text) {
+        dupMsg.className = 'field-msg show msg-' + type;
+        dupMsg.innerHTML = text;
+        wrapMk.className   = 'input-wrapper ' + (type === 'error' ? 'is-error' : type === 'ok' ? 'is-ok' : 'is-checking');
+        wrapKelas.className= 'input-wrapper ' + (type === 'error' ? 'is-error' : type === 'ok' ? 'is-ok' : 'is-checking');
+      }
+
+      function clearDupMsg() {
+        dupMsg.className = 'field-msg';
+        wrapMk.className = 'input-wrapper';
+        wrapKelas.className = 'input-wrapper';
+      }
+
+      async function checkDuplicate() {
+        const mkRaw   = mkEl.value.trim();
+        const kelasRaw= kelasEl.value.trim();
+        const mk      = normStr(mkRaw);
+        const kelas   = normStr(kelasRaw);
+        const jj      = jenjangEl.value;
+
+        if (!mk || !kelas) { clearDupMsg(); return true; }
+
+        const key = jj + '|' + mk + '|' + kelas;
+
+        // 1. Check in-session memory first (instant)
+        if (submittedCombos.has(key)) {
+          const specificMsg = `🚫 Mata kuliah <b>${escapeHtml(mkRaw)}</b> dengan kelas <b>${escapeHtml(kelasRaw)}</b> sudah pernah diunggah di sesi ini.`;
+          showDupMsg('error', specificMsg);
+          return false;
+        }
+
+        // 2. Check against Google Sheets via Apps Script
+        showDupMsg('check', '🔍 Memeriksa data di server...');
+        try {
+          const resp = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'checkDuplicate', jenjang: jj, mataKuliah: mk, kelas: kelas })
+          });
+          const result = await resp.json();
+          if (result.isDuplicate) {
+            // Ambil pesan spesifik dari server (bisa berisi nama MK & kelas yang bentrok)
+            let specificMsg = result.message || `🚫 Mata kuliah <b>${escapeHtml(mkRaw)}</b> dengan kelas <b>${escapeHtml(kelasRaw)}</b> sudah ada di database.`;
+            showDupMsg('error', specificMsg);
+            return false;
+          } else {
+            showDupMsg('ok', '✅ Kombinasi mata kuliah & kelas tersedia.');
+            return true;
+          }
+        } catch(e) {
+          // Jika server tidak mendukung pengecekan, izinkan lanjut (opsional)
+          clearDupMsg();
+          return true;
+        }
+      }
+
+      // Helper untuk escape HTML
+      function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+          if (m === '&') return '&amp;';
+          if (m === '<') return '&lt;';
+          if (m === '>') return '&gt;';
+          return m;
+        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+          return c;
+        });
+      }
+
+      // Trigger check when user finishes typing in either field
+      let dupTimer;
+      function scheduleDupCheck() {
+        clearTimeout(dupTimer);
+        const mk    = normStr(mkEl.value);
+        const kelas = normStr(kelasEl.value);
+        if (!mk || !kelas) { clearDupMsg(); return; }
+        showDupMsg('check', '🔍 Memeriksa duplikasi...');
+        dupTimer = setTimeout(checkDuplicate, 600);
+      }
+
+      mkEl.addEventListener('input', scheduleDupCheck);
+      kelasEl.addEventListener('input', scheduleDupCheck);
+
+      // Register combo to in-session Set after successful submit
+      const observer = new MutationObserver(() => {
+        const card = document.querySelector('.form-card');
+        if (card && card.getAttribute('data-success') === 'true') {
+          const key = jenjangEl.value + '|' + normStr(mkEl.value) + '|' + normStr(kelasEl.value);
+          submittedCombos.add(key);
+          observer.disconnect();
         }
       });
+      observer.observe(document.querySelector('.form-card'), { attributes: true });
 
-      prevBtn.addEventListener('click', () => {
-        currentStep--;
-        updateStepper();
-      });
-
-      function validateStep(step) {
+      // --- Enhanced step validation with async duplicate check
+      async function validateStepAsync(step) {
         if (step === 0) {
           if (!mkEl.value || !dosenEl.value || !kelasEl.value) {
             showNotify('Harap isi semua informasi dasar.', 'error');
             return false;
           }
+          // jalankan pengecekan duplikasi terlebih dahulu
+          const isUnique = await checkDuplicate();
+          if (!isUnique) {
+            showNotify('Kombinasi mata kuliah dan kelas sudah ada. Silakan gunakan kelas/grup lain.', 'error');
+            return false;
+          }
+          return true;
         } else if (step === 1) {
-          checkAllValidations(); // Re-run to get latest status
+          checkAllValidations();
           if (!tipeEl.value) {
             showNotify('Harap pilih tipe ujian.', 'error');
             return false;
@@ -831,12 +934,28 @@
             showNotify(validationStatus.message, 'error');
             return false;
           }
+          return true;
         }
-        feedbackMsg.style.display = 'none';
         return true;
       }
 
-      // --- Original Validations ---
+      // Override next button click handler (async)
+      nextBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const isValid = await validateStepAsync(currentStep);
+        if (isValid && currentStep < steps.length - 1) {
+          currentStep++;
+          updateStepper();
+        }
+      });
+
+      prevBtn.addEventListener('click', () => {
+        if (currentStep > 0) {
+          currentStep--;
+          updateStepper();
+        }
+      });
+
       function checkAllValidations() {
         const y = parseInt(yearEl.value, 10);
         const s = semEl.value;
@@ -900,7 +1019,7 @@
       [yearEl, semEl, tipeEl].forEach(el => el.addEventListener('change', checkAllValidations));
       checkAllValidations();
 
-      // --- Reset Form ---
+      // --- Reset Form (already covers) ---
       resetBtn.addEventListener('click', () => {
         if (confirm('Bersihkan semua data di formulir?')) {
           document.getElementById('uploadForm').reset();
@@ -910,6 +1029,7 @@
           semNotif.classList.remove('active');
           feedbackMsg.style.display = 'none';
           checkAllValidations();
+          clearDupMsg();
         }
       });
 
@@ -936,6 +1056,7 @@
 
           currentStep = 0;
           updateStepper();
+          clearDupMsg();
 
           // Phase 2: slide in
           card.classList.remove('switching-out');
@@ -946,12 +1067,32 @@
         }, 280);
       };
 
-      // --- Navigation View ---
-      window.navigate = function(pageId, el) {
-        document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
-        document.getElementById(pageId).classList.add('active');
-        if (pageId === 'data-view') loadSubmissions();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+      // --- Sticky Navbar Scroll Behaviour ---
+      const stickyNav = document.getElementById('stickyNav');
+      let ticking = false;
+
+      function updateNav() {
+        const scrollY = window.scrollY || window.pageYOffset;
+        const headerBottom = document.querySelector('.header').getBoundingClientRect().bottom;
+
+        if (headerBottom <= 10) {
+          stickyNav.classList.add('visible');
+          document.body.classList.add('nav-visible');
+        } else {
+          stickyNav.classList.remove('visible');
+          document.body.classList.remove('nav-visible');
+        }
+        ticking = false;
+      }
+
+      window.addEventListener('scroll', () => {
+        if (!ticking) { requestAnimationFrame(updateNav); ticking = true; }
+      }, { passive: true });
+
+      // Sync sticky tab highlight with main tabs
+      window.syncStickyTabs = function(jenjang) {
+        document.querySelectorAll('.sticky-tab').forEach(t => t.classList.remove('active'));
+        document.getElementById('snav-' + jenjang).classList.add('active');
       };
 
       // --- File Logic ---
@@ -994,6 +1135,12 @@
           showNotify('Harap pilih file terlebih dahulu.', 'error');
           return;
         }
+        // Pastikan duplikasi tidak lolos sebelum upload
+        const isUnique = await checkDuplicate();
+        if (!isUnique) {
+          showNotify('Kombinasi mata kuliah dan kelas sudah ada. Silakan gunakan kelas/grup lain.', 'error');
+          return;
+        }
 
         setLoadingState(true);
         const reader = new FileReader();
@@ -1001,7 +1148,7 @@
           const base64Data = e.target.result.split(',')[1];
           const payload = {
             tipe: tipeEl.value, jenjang: jenjangEl.value, year: yearEl.value,
-            semesterType: semEl.value, mataKuliah: mkEl.value, kelas: kelasEl.value,
+            semesterType: semEl.value, mataKuliah: mkEl.value.trim(), kelas: kelasEl.value.trim(),
             namaDosen: dosenEl.value, fileName: file.name,
             mimeType: file.type || 'application/octet-stream', fileData: base64Data
           };
@@ -1038,148 +1185,8 @@
         submitBtn.innerHTML = active ? '<div class="loading-spinner" style="margin:0 auto;"></div>' : '<span>🚀</span> Unggah Soal Sekarang';
       }
 
-      // --- Duplicate MK+Kelas Validation ---
-      const dupMsg   = document.getElementById('dupMsg');
-      const wrapMk   = document.getElementById('wrap-mk');
-      const wrapKelas= document.getElementById('wrap-kelas');
-
-      // In-session memory of submitted combos: key = "jenjang|mk|kelas"
-      const submittedCombos = new Set();
-
-      function normStr(s) {
-        return String(s).trim().toLowerCase().replace(/\s+/g, ' ');
-      }
-
-      function showDupMsg(type, text) {
-        dupMsg.className = 'field-msg show msg-' + type;
-        dupMsg.innerHTML = text;
-        wrapMk.className   = 'input-wrapper ' + (type === 'error' ? 'is-error' : type === 'ok' ? 'is-ok' : 'is-checking');
-        wrapKelas.className= 'input-wrapper ' + (type === 'error' ? 'is-error' : type === 'ok' ? 'is-ok' : 'is-checking');
-      }
-
-      function clearDupMsg() {
-        dupMsg.className = 'field-msg';
-        wrapMk.className = 'input-wrapper';
-        wrapKelas.className = 'input-wrapper';
-      }
-
-      async function checkDuplicate() {
-        const mk    = normStr(mkEl.value);
-        const kelas = normStr(kelasEl.value);
-        const jj    = jenjangEl.value;
-
-        if (!mk || !kelas) { clearDupMsg(); return true; }
-
-        const key = jj + '|' + mk + '|' + kelas;
-
-        // 1. Check in-session memory first (instant)
-        if (submittedCombos.has(key)) {
-          showDupMsg('error', '🚫 Mata kuliah <b>' + mkEl.value.trim() + '</b> kelas <b>' + kelasEl.value.trim() + '</b> sudah pernah diunggah di sesi ini.');
-          return false;
-        }
-
-        // 2. Check against Google Sheets via Apps Script
-        showDupMsg('check', '🔍 Memeriksa data di server...');
-        try {
-          const resp = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'checkDuplicate', jenjang: jj, mataKuliah: mk, kelas: kelas })
-          });
-          const result = await resp.json();
-          if (result.isDuplicate) {
-            showDupMsg('error', '🚫 Mata kuliah <b>' + mkEl.value.trim() + '</b> kelas <b>' + kelasEl.value.trim() + '</b> sudah ada di database.');
-            return false;
-          } else {
-            showDupMsg('ok', '✅ Kombinasi mata kuliah &amp; kelas tersedia.');
-            return true;
-          }
-        } catch(e) {
-          // Network/backend doesn't support check — allow and warn
-          clearDupMsg();
-          return true;
-        }
-      }
-
-      // Trigger check when user finishes typing in either field
-      let dupTimer;
-      function scheduleDupCheck() {
-        clearTimeout(dupTimer);
-        const mk    = normStr(mkEl.value);
-        const kelas = normStr(kelasEl.value);
-        if (!mk || !kelas) { clearDupMsg(); return; }
-        showDupMsg('check', '🔍 Memeriksa duplikasi...');
-        dupTimer = setTimeout(checkDuplicate, 600);
-      }
-
-      mkEl.addEventListener('input', scheduleDupCheck);
-      kelasEl.addEventListener('input', scheduleDupCheck);
-
-      // Register combo to in-session Set after successful submit
-      const _origSubmit = submitBtn.onclick;
-      submitBtn.addEventListener('click', function onSuccessRegister() {
-        // We hook after submit succeeds; watch for success card
-        const observer = new MutationObserver(() => {
-          const card = document.querySelector('.form-card');
-          if (card && card.getAttribute('data-success') === 'true') {
-            const key = jenjangEl.value + '|' + normStr(mkEl.value) + '|' + normStr(kelasEl.value);
-            submittedCombos.add(key);
-            observer.disconnect();
-          }
-        });
-        observer.observe(document.querySelector('.form-card'), { attributes: true });
-      });
-
-      // Also block Next if duplicate
-      const _origValidateStep = validateStep;
-      // Patch validateStep to be async-aware for step 0
-      const origNextClick = nextBtn.onclick;
-      nextBtn.addEventListener('click', async (e) => {
-        if (currentStep === 0) {
-          const ok = await checkDuplicate();
-          if (!ok) {
-            showNotify('Kombinasi mata kuliah dan kelas sudah ada. Periksa kembali.', 'error');
-          }
-        }
-      }, true); // capture phase so it runs before the existing click
-
-      // --- Sticky Navbar Scroll Behaviour ---
-      const stickyNav = document.getElementById('stickyNav');
-      let lastScroll = 0;
-      let ticking = false;
-
-      function updateNav() {
-        const scrollY = window.scrollY || window.pageYOffset;
-        const headerBottom = document.querySelector('.header').getBoundingClientRect().bottom;
-
-        if (headerBottom <= 10) {
-          stickyNav.classList.add('visible');
-          document.body.classList.add('nav-visible');
-        } else {
-          stickyNav.classList.remove('visible');
-          document.body.classList.remove('nav-visible');
-        }
-        lastScroll = scrollY;
-        ticking = false;
-      }
-
-      window.addEventListener('scroll', () => {
-        if (!ticking) { requestAnimationFrame(updateNav); ticking = true; }
-      }, { passive: true });
-
-      // Sync sticky tab highlight with main tabs
-      window.syncStickyTabs = function(jenjang) {
-        document.querySelectorAll('.sticky-tab').forEach(t => t.classList.remove('active'));
-        document.getElementById('snav-' + jenjang).classList.add('active');
-      };
-
-      // Keep sticky tabs in sync when main tabs are clicked
-      const origSwitch = window.switchJenjang;
-      window.switchJenjang = function(jenjang, btn) {
-        origSwitch(jenjang, btn);
-        syncStickyTabs(jenjang);
-      };
-
+      // final call to ensure initial state
+      updateStepper();
     })();
   </script>
 </body>
