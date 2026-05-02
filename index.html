@@ -387,9 +387,98 @@
       .step-label { font-size: 0.65rem; }
       .nav-btns { flex-direction: column-reverse; }
     }
+
+    /* --- Sticky Navbar --- */
+    .sticky-nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 1.5rem;
+      height: 0; overflow: hidden; opacity: 0;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+      box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.08);
+      transition: height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                  opacity 0.35s ease,
+                  padding 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+    }
+    .sticky-nav.visible {
+      height: 60px; opacity: 1; pointer-events: auto;
+    }
+    @media (min-width: 768px) {
+      .sticky-nav.visible { height: 64px; }
+    }
+
+    /* Nav left: logo + title */
+    .sticky-nav-left {
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    .sticky-logo {
+      width: 34px; height: 34px; border-radius: 10px;
+      background: var(--t-logo-bg);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px var(--t-glow-soft);
+      overflow: hidden; flex-shrink: 0;
+      transition: background 0.5s ease;
+    }
+    .sticky-logo img { width: 24px; height: 24px; object-fit: contain; }
+    .sticky-title {
+      font-weight: 900; font-size: 0.95rem; letter-spacing: -0.03em;
+      background: var(--t-title-grad);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      transition: background 0.5s ease;
+    }
+    .sticky-subtitle {
+      font-size: 0.65rem; color: var(--text-sub); font-weight: 600;
+      display: none;
+    }
+    @media (min-width: 480px) { .sticky-subtitle { display: block; } }
+
+    /* Nav right: mini tab pills */
+    .sticky-tabs {
+      display: flex; gap: 0.4rem; align-items: center;
+    }
+    .sticky-tab {
+      padding: 0.4rem 0.85rem; border-radius: 100px; border: none;
+      font-size: 0.78rem; font-weight: 800; cursor: pointer;
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      background: #f1f5f9; color: var(--text-sub);
+      letter-spacing: -0.01em;
+    }
+    .sticky-tab.active {
+      background: var(--t-tab-grad); color: white;
+      box-shadow: 0 4px 12px var(--t-tab-shadow);
+    }
+    .sticky-tab:not(.active):hover { background: #e2e8f0; }
+
+    /* Push content down when nav is visible */
+    body.nav-visible .header { padding-top: calc(3.5rem + 60px); }
+    @media (max-width: 480px) {
+      body.nav-visible .header { padding-top: calc(2.5rem + 60px); }
+    }
   </style>
 </head>
 <body data-jenjang="S1">
+
+  <!-- Sticky Navbar -->
+  <nav class="sticky-nav" id="stickyNav">
+    <div class="sticky-nav-left">
+      <div class="sticky-logo">
+        <img src="https://i.imgur.com/JkxRYd6.png" alt="Logo">
+      </div>
+      <div>
+        <div class="sticky-title">SARJANA &amp; MAGISTER</div>
+        <div class="sticky-subtitle">Sistem Pengumpulan Soal UTS / UAS</div>
+      </div>
+    </div>
+    <div class="sticky-tabs">
+      <button class="sticky-tab active" id="snav-S1" onclick="switchJenjang('S1', document.getElementById('btn-S1')); syncStickyTabs('S1')">📖 S1</button>
+      <button class="sticky-tab" id="snav-S2" onclick="switchJenjang('S2', document.getElementById('btn-S2')); syncStickyTabs('S2')">🎓 S2</button>
+    </div>
+  </nav>
 
   <!-- Artistic Background Elements -->
   <div class="bg-elements">
@@ -910,6 +999,43 @@
         submitBtn.disabled = active;
         submitBtn.innerHTML = active ? '<div class="loading-spinner" style="margin:0 auto;"></div>' : '<span>🚀</span> Unggah Soal Sekarang';
       }
+
+      // --- Sticky Navbar Scroll Behaviour ---
+      const stickyNav = document.getElementById('stickyNav');
+      let lastScroll = 0;
+      let ticking = false;
+
+      function updateNav() {
+        const scrollY = window.scrollY || window.pageYOffset;
+        const headerBottom = document.querySelector('.header').getBoundingClientRect().bottom;
+
+        if (headerBottom <= 10) {
+          stickyNav.classList.add('visible');
+          document.body.classList.add('nav-visible');
+        } else {
+          stickyNav.classList.remove('visible');
+          document.body.classList.remove('nav-visible');
+        }
+        lastScroll = scrollY;
+        ticking = false;
+      }
+
+      window.addEventListener('scroll', () => {
+        if (!ticking) { requestAnimationFrame(updateNav); ticking = true; }
+      }, { passive: true });
+
+      // Sync sticky tab highlight with main tabs
+      window.syncStickyTabs = function(jenjang) {
+        document.querySelectorAll('.sticky-tab').forEach(t => t.classList.remove('active'));
+        document.getElementById('snav-' + jenjang).classList.add('active');
+      };
+
+      // Keep sticky tabs in sync when main tabs are clicked
+      const origSwitch = window.switchJenjang;
+      window.switchJenjang = function(jenjang, btn) {
+        origSwitch(jenjang, btn);
+        syncStickyTabs(jenjang);
+      };
 
     })();
   </script>
