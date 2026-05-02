@@ -272,6 +272,35 @@
                  colorFlash 0.6s ease forwards;
     }
 
+    /* --- Side-by-side row for MK + Kelas --- */
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 2rem;
+      align-items: start;
+    }
+    @media (max-width: 640px) {
+      .form-row { grid-template-columns: 1fr; gap: 0; }
+    }
+
+    /* Duplicate validation state */
+    .input-wrapper.is-error input,
+    .input-wrapper.is-error select { border-color: #f43f5e !important; background: #fff1f2; }
+    .input-wrapper.is-ok input,
+    .input-wrapper.is-ok select { border-color: #10b981 !important; background: #f0fdf4; }
+    .input-wrapper.is-checking input { border-color: var(--t-primary) !important; }
+
+    .field-msg {
+      font-size: 0.78rem; font-weight: 700; margin-top: 0.6rem;
+      padding: 0.5rem 0.85rem; border-radius: 10px;
+      display: none; align-items: center; gap: 0.4rem;
+      animation: slideUp 0.3s ease;
+    }
+    .field-msg.show { display: flex; }
+    .field-msg.msg-error { background: #fee2e2; color: #991b1b; }
+    .field-msg.msg-ok    { background: #dcfce7; color: #166534; }
+    .field-msg.msg-check { background: #eff6ff; color: #1d4ed8; }
+
     /* --- Precision Stepper (Synchronized) --- */
     .stepper { display: flex; justify-content: space-between; position: relative; margin-bottom: 4rem; padding: 0 1rem; }
     .stepper::before {
@@ -560,13 +589,28 @@
 
           <!-- Step 1: Informasi Dasar -->
           <div class="step-content active" id="step-1">
-            <div class="form-group">
-              <label><i>📚</i> Nama Mata Kuliah <span>*</span></label>
-              <div class="input-wrapper">
-                <i>📖</i>
-                <input type="text" id="mataKuliah" placeholder="Contoh: Metode Penelitian Kuantitatif">
+
+            <!-- Row: Mata Kuliah + Kelas side by side -->
+            <div class="form-row">
+              <div class="form-group">
+                <label><i>📚</i> Nama Mata Kuliah <span>*</span></label>
+                <div class="input-wrapper" id="wrap-mk">
+                  <i>📖</i>
+                  <input type="text" id="mataKuliah" placeholder="Contoh: Metode Penelitian">
+                </div>
+              </div>
+              <div class="form-group">
+                <label><i>🏢</i> Kelas / Grup <span>*</span></label>
+                <div class="input-wrapper" id="wrap-kelas">
+                  <i>🏘️</i>
+                  <input type="text" id="kelas" placeholder="Contoh: A, B1, Sore">
+                </div>
               </div>
             </div>
+
+            <!-- Duplicate check message (spans full row) -->
+            <div class="field-msg" id="dupMsg" style="margin-top:-1.5rem; margin-bottom:2rem;"></div>
+
             <div class="form-group">
               <label><i>👨‍🏫</i> Nama Dosen Pengampu <span>*</span></label>
               <div class="input-wrapper">
@@ -574,13 +618,7 @@
                 <input type="text" id="namaDosen" placeholder="Nama Lengkap Beserta Gelar">
               </div>
             </div>
-            <div class="form-group">
-              <label><i>🏢</i> Kelas / Grup <span>*</span></label>
-              <div class="input-wrapper">
-                <i>🏘️</i>
-                <input type="text" id="kelas" placeholder="Contoh: A, B1, atau Sore">
-              </div>
-            </div>
+
           </div>
 
           <!-- Step 2: Akademik -->
@@ -999,6 +1037,111 @@
         submitBtn.disabled = active;
         submitBtn.innerHTML = active ? '<div class="loading-spinner" style="margin:0 auto;"></div>' : '<span>🚀</span> Unggah Soal Sekarang';
       }
+
+      // --- Duplicate MK+Kelas Validation ---
+      const dupMsg   = document.getElementById('dupMsg');
+      const wrapMk   = document.getElementById('wrap-mk');
+      const wrapKelas= document.getElementById('wrap-kelas');
+
+      // In-session memory of submitted combos: key = "jenjang|mk|kelas"
+      const submittedCombos = new Set();
+
+      function normStr(s) {
+        return String(s).trim().toLowerCase().replace(/\s+/g, ' ');
+      }
+
+      function showDupMsg(type, text) {
+        dupMsg.className = 'field-msg show msg-' + type;
+        dupMsg.innerHTML = text;
+        wrapMk.className   = 'input-wrapper ' + (type === 'error' ? 'is-error' : type === 'ok' ? 'is-ok' : 'is-checking');
+        wrapKelas.className= 'input-wrapper ' + (type === 'error' ? 'is-error' : type === 'ok' ? 'is-ok' : 'is-checking');
+      }
+
+      function clearDupMsg() {
+        dupMsg.className = 'field-msg';
+        wrapMk.className = 'input-wrapper';
+        wrapKelas.className = 'input-wrapper';
+      }
+
+      async function checkDuplicate() {
+        const mk    = normStr(mkEl.value);
+        const kelas = normStr(kelasEl.value);
+        const jj    = jenjangEl.value;
+
+        if (!mk || !kelas) { clearDupMsg(); return true; }
+
+        const key = jj + '|' + mk + '|' + kelas;
+
+        // 1. Check in-session memory first (instant)
+        if (submittedCombos.has(key)) {
+          showDupMsg('error', '🚫 Mata kuliah <b>' + mkEl.value.trim() + '</b> kelas <b>' + kelasEl.value.trim() + '</b> sudah pernah diunggah di sesi ini.');
+          return false;
+        }
+
+        // 2. Check against Google Sheets via Apps Script
+        showDupMsg('check', '🔍 Memeriksa data di server...');
+        try {
+          const resp = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'checkDuplicate', jenjang: jj, mataKuliah: mk, kelas: kelas })
+          });
+          const result = await resp.json();
+          if (result.isDuplicate) {
+            showDupMsg('error', '🚫 Mata kuliah <b>' + mkEl.value.trim() + '</b> kelas <b>' + kelasEl.value.trim() + '</b> sudah ada di database.');
+            return false;
+          } else {
+            showDupMsg('ok', '✅ Kombinasi mata kuliah &amp; kelas tersedia.');
+            return true;
+          }
+        } catch(e) {
+          // Network/backend doesn't support check — allow and warn
+          clearDupMsg();
+          return true;
+        }
+      }
+
+      // Trigger check when user finishes typing in either field
+      let dupTimer;
+      function scheduleDupCheck() {
+        clearTimeout(dupTimer);
+        const mk    = normStr(mkEl.value);
+        const kelas = normStr(kelasEl.value);
+        if (!mk || !kelas) { clearDupMsg(); return; }
+        showDupMsg('check', '🔍 Memeriksa duplikasi...');
+        dupTimer = setTimeout(checkDuplicate, 600);
+      }
+
+      mkEl.addEventListener('input', scheduleDupCheck);
+      kelasEl.addEventListener('input', scheduleDupCheck);
+
+      // Register combo to in-session Set after successful submit
+      const _origSubmit = submitBtn.onclick;
+      submitBtn.addEventListener('click', function onSuccessRegister() {
+        // We hook after submit succeeds; watch for success card
+        const observer = new MutationObserver(() => {
+          const card = document.querySelector('.form-card');
+          if (card && card.getAttribute('data-success') === 'true') {
+            const key = jenjangEl.value + '|' + normStr(mkEl.value) + '|' + normStr(kelasEl.value);
+            submittedCombos.add(key);
+            observer.disconnect();
+          }
+        });
+        observer.observe(document.querySelector('.form-card'), { attributes: true });
+      });
+
+      // Also block Next if duplicate
+      const _origValidateStep = validateStep;
+      // Patch validateStep to be async-aware for step 0
+      const origNextClick = nextBtn.onclick;
+      nextBtn.addEventListener('click', async (e) => {
+        if (currentStep === 0) {
+          const ok = await checkDuplicate();
+          if (!ok) {
+            showNotify('Kombinasi mata kuliah dan kelas sudah ada. Periksa kembali.', 'error');
+          }
+        }
+      }, true); // capture phase so it runs before the existing click
 
       // --- Sticky Navbar Scroll Behaviour ---
       const stickyNav = document.getElementById('stickyNav');
